@@ -17,13 +17,16 @@ namespace MDD4All.DME.Proxies
             //// Prevents the serializer from crashing if objects point to each other in a circle.
             //ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
             // Explicitly writes 'null' into the JSON file instead of skipping the property.
-            NullValueHandling = NullValueHandling.Ignore,
+            // Also needed on the way back in: without an explicit "Property": null in the
+            // file, deserialization leaves whatever the target type's constructor already
+            // set, so a deleted/nulled property would silently reappear after reload.
+            NullValueHandling = NullValueHandling.Include,
             // Ensures a "fresh start" by replacing existing collections and objects instead of 
             // appending new data to them. This prevents data pollution and duplicate entries.
             // Example: If a list currently has 3 items and you load a file containing 2 items, 
             // 'Replace' ensures the list has exactly 2 items. Without this, the list would 
             // incorrectly grow to 5 items due to default 'Append' behavior.
-            //ObjectCreationHandling = ObjectCreationHandling.Replace,
+            ObjectCreationHandling = ObjectCreationHandling.Replace,
             //// Allows the use of private or internal constructors when creating objects from JSON.
             //ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor,
             //// Uses a simplified assembly name in the $type metadata for better compatibility.
