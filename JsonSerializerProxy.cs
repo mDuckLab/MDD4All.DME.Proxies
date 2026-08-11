@@ -40,13 +40,22 @@ namespace MDD4All.DME.Proxies
             //Converters = new List<JsonConverter> { new DictionaryJsonConverter() }
         };
 
-        public string Serialize(object objectInstance)
+        public string Serialize(object objectInstance, bool includeTypeInformation)
         {
             string result = string.Empty;
 
             if (objectInstance != null)
             {
-                result = JsonConvert.SerializeObject(objectInstance, SerializerSettings);
+                if (includeTypeInformation)
+                {
+                    // Declaring the root as "object" makes TypeNameHandling.Auto write the actual
+                    // type as $type - without it the root's type is implied and never recorded.
+                    result = JsonConvert.SerializeObject(objectInstance, typeof(object), SerializerSettings);
+                }
+                else
+                {
+                    result = JsonConvert.SerializeObject(objectInstance, SerializerSettings);
+                }
             }
 
             return result;
