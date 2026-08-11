@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json;
+using System;
 
 namespace MDD4All.DME.Proxies
 {
@@ -56,6 +57,20 @@ namespace MDD4All.DME.Proxies
                 {
                     result = JsonConvert.SerializeObject(objectInstance, SerializerSettings);
                 }
+            }
+
+            return result;
+        }
+
+        // Runs in the data model's own AssemblyLoadContext, so a $type in the file resolves to the
+        // same type identity the caller expects - resolving it outside would yield a different one.
+        public object Deserialize(string json, Type targetType)
+        {
+            object result = null;
+
+            if (!string.IsNullOrEmpty(json) && targetType != null)
+            {
+                result = JsonConvert.DeserializeObject(json, targetType, SerializerSettings);
             }
 
             return result;
