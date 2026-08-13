@@ -1,5 +1,6 @@
 ﻿using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 
 namespace MDD4All.DME.Proxies
 {
@@ -34,11 +35,10 @@ namespace MDD4All.DME.Proxies
             //TypeNameAssemblyFormatHandling = TypeNameAssemblyFormatHandling.Simple,
             // Formats the resulting JSON string with indentation and line breaks for human readability.
             Formatting = Formatting.Indented,
-            // Adds a custom converter to handle Dictionary structures correctly during conversion.
-            // This converter handles the transformation of IDictionary objects.
-            // It solves the problem that standard JSON only allows strings as keys, 
-            // whereas C# dictionaries can use complex objects as keys.
-            //Converters = new List<JsonConverter> { new DictionaryJsonConverter() }
+            // JSON only allows strings as property names. Without this, a dictionary with a class
+            // as its key is written using the key's ToString(), which cannot be turned back into
+            // an object - the key is lost. The converter writes those as Key/Value pairs instead.
+            Converters = new List<JsonConverter> { new DictionaryJsonConverter() }
         };
 
         public string Serialize(object objectInstance, bool includeTypeInformation)
