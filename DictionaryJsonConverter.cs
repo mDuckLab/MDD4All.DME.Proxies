@@ -6,9 +6,17 @@ using System.Collections;
 
 namespace MDD4All.DME.Proxies
 {
-    // JSON only allows strings as property names, so dictionaries with complex keys need
-    // their own format. Lives in this assembly because Newtonsoft instantiates the converter
-    // itself - it has to be the copy loaded in the data model's own AssemblyLoadContext.
+    // JSON allows only strings as property names, so a dictionary keyed by an object has nowhere
+    // to put its keys. Left to Json.NET, a Dictionary<Address, Person> comes out like this:
+    //
+    //     "Residents": { "Hauptstrasse 12, ": { "Name": "Meier" } }
+    //
+    // The key has been through ToString() and is gone. Nothing can turn that text back into an
+    // Address, so the file is unreadable the moment it is opened again. This converter writes a
+    // list of pairs instead, where the key stays an object of its own.
+    //
+    // It sits in this assembly because JsonSerializerProxy constructs it, and that runs inside the
+    // data model's own AssemblyLoadContext.
     public class DictionaryJsonConverter : JsonConverter
     {
         private readonly bool _writeComplexKeys;
@@ -27,6 +35,9 @@ namespace MDD4All.DME.Proxies
         }
 
 
+        // Json.NET has stepped aside for this value, so exactly one complete JSON value has to be
+        // written here - no more and no less, or everything after it in the file is shifted. That
+        // is why the dead ends below write null instead of simply returning.
         public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
         {
             IDictionary dictionary = value as IDictionary;
@@ -96,6 +107,10 @@ namespace MDD4All.DME.Proxies
             }
         }
 
+        // Which form is in the file is decided by looking at it, not by asking the type. The same
+        // property is an object where the keys were simple, an array where they were not, and null
+        // where a save dropped it. All three have to keep working no matter how the setting stands
+        // today, because files written earlier do not change.
         public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
         {
             // An explicit null has to stay null - building an empty dictionary here would make
