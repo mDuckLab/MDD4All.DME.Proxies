@@ -28,10 +28,22 @@ namespace MDD4All.DME.Proxies
             _writeComplexKeys = writeComplexKeys;
         }
 
-        // Newtonsoft calls this for every type it encounters and routes the matching ones here.
+        // Json.NET asks this for every type it meets and hands over the ones that say yes. Only
+        // dictionaries whose key is an object are taken - a key that survives being turned into
+        // text is Json.NET's own business, and it does that better than a hand-written branch
+        // here would. A DateTime key, for one, needs its round-trip format and not ToString().
         public override bool CanConvert(Type objectType)
         {
-            return typeof(IDictionary).IsAssignableFrom(objectType);
+            bool result = false;
+
+            TypeAnalyzer analyst = TypeAnalyzer.CreateAnalyst(objectType);
+
+            if (analyst.TypeCategory == TypeCategory.IDictionary)
+            {
+                result = !TypeAnalyzer.IsSimpleDataType(analyst.UnderlyingTypes[0]);
+            }
+
+            return result;
         }
 
 
@@ -44,40 +56,9 @@ namespace MDD4All.DME.Proxies
 
             if (dictionary == null)
             {
+                // The property holds nothing, and NullValueHandling.Include means that has to be
+                // said out loud rather than skipped.
                 writer.WriteNull();
-                return;
-            }
-
-            Type[] genericArguments = value.GetType().GetGenericArguments();
-
-            // A non-generic dictionary doesn't reveal its key type, so no format can be picked.
-            if (genericArguments.Length < 2)
-            {
-                writer.WriteNull();
-                return;
-            }
-
-            Type keyType = genericArguments[0];
-
-            if (TypeAnalyzer.IsSimpleDataType(keyType))
-            {
-                // { "Key1": "Value1" } - the key doubles as the JSON property name.
-                writer.WriteStartObject();
-
-                foreach (DictionaryEntry entry in dictionary)
-                {
-                    string propertyName = string.Empty;
-
-                    if (entry.Key != null)
-                    {
-                        propertyName = entry.Key.ToString();
-                    }
-
-                    writer.WritePropertyName(propertyName);
-                    serializer.Serialize(writer, entry.Value);
-                }
-
-                writer.WriteEndObject();
             }
             else if (_writeComplexKeys)
             {
@@ -113,60 +94,59 @@ namespace MDD4All.DME.Proxies
         // today, because files written earlier do not change.
         public override object ReadJson(JsonReader reader, Type objectType, object existingValue, JsonSerializer serializer)
         {
+            object result = null;
+
             // An explicit null has to stay null - building an empty dictionary here would make
             // a cleared property come back as {} after reloading.
-            if (reader.TokenType == JsonToken.Null)
+            if (reader.TokenType != JsonToken.Null)
             {
-                return null;
-            }
+                TypeAnalyzer analyst = TypeAnalyzer.CreateAnalyst(objectType);
 
-            Type[] genericArguments = objectType.GetGenericArguments();
+                Type keyType = analyst.UnderlyingTypes[0];
+                Type valueType = analyst.UnderlyingTypes[1];
 
-            if (genericArguments.Length < 2)
-            {
-                return null;
-            }
+                IDictionary dictionary = (IDictionary)Activator.CreateInstance(objectType);
 
-            Type keyType = genericArguments[0];
-            Type valueType = genericArguments[1];
-
-            IDictionary dictionary = (IDictionary)Activator.CreateInstance(objectType);
-
-            if (reader.TokenType == JsonToken.StartArray)
-            {
-                // The complex-key format written above.
-                JArray temporaryArray = JArray.Load(reader);
-
-                foreach (JToken item in temporaryArray)
+                if (reader.TokenType == JsonToken.StartArray)
                 {
-                    JToken keyToken = item["Key"];
-                    JToken valueToken = item["Value"];
+                    // The Key/Value form written above.
+                    JArray temporaryArray = JArray.Load(reader);
 
-                    if (keyToken != null)
+                    foreach (JToken item in temporaryArray)
                     {
-                        object key = keyToken.ToObject(keyType, serializer);
+                        JToken keyToken = item["Key"];
+                        JToken valueToken = item["Value"];
 
-                        object value = null;
-
-                        if (valueToken != null)
+                        if (keyToken != null)
                         {
-                            value = valueToken.ToObject(valueType, serializer);
-                        }
+                            object key = keyToken.ToObject(keyType, serializer);
 
-                        if (key != null)
-                        {
-                            dictionary.Add(key, value);
+                            object value = null;
+
+                            if (valueToken != null)
+                            {
+                                value = valueToken.ToObject(valueType, serializer);
+                            }
+
+                            if (key != null)
+                            {
+                                dictionary.Add(key, value);
+                            }
                         }
                     }
                 }
-            }
-            else if (reader.TokenType == JsonToken.StartObject)
-            {
-                // Simple keys already match what Newtonsoft expects.
-                serializer.Populate(reader, dictionary);
+                else if (reader.TokenType == JsonToken.StartObject)
+                {
+                    // Only files written before the plain form was abandoned still look like this,
+                    // and their keys went through ToString(). Populate is left to fail on them with
+                    // a message naming the key it cannot convert, which beats a silent empty result.
+                    serializer.Populate(reader, dictionary);
+                }
+
+                result = dictionary;
             }
 
-            return dictionary;
+            return result;
         }
     }
 }
