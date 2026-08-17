@@ -35,27 +35,37 @@ namespace MDD4All.DME.Proxies
             //TypeNameAssemblyFormatHandling = TypeNameAssemblyFormatHandling.Simple,
             // Formats the resulting JSON string with indentation and line breaks for human readability.
             Formatting = Formatting.Indented,
-            // JSON only allows strings as property names. Without this, a dictionary with a class
-            // as its key is written using the key's ToString(), which cannot be turned back into
-            // an object - the key is lost. The converter writes those as Key/Value pairs instead.
-            Converters = new List<JsonConverter> { new DictionaryJsonConverter() }
         };
 
-        public string Serialize(object objectInstance, bool includeTypeInformation)
+        // JSON only allows strings as property names, so a dictionary keyed by a class needs the
+        // converter. It stays registered either way - taking it out would let Newtonsoft write such
+        // a dictionary under ToString() of the key, which cannot be read back.
+        private JsonSerializerSettings Settings(bool writeComplexDictionaryKeys)
+        {
+            JsonSerializerSettings settings = SerializerSettings;
+
+            settings.Converters = new List<JsonConverter> { new DictionaryJsonConverter(writeComplexDictionaryKeys) };
+
+            return settings;
+        }
+
+        public string Serialize(object objectInstance, bool includeTypeInformation, bool writeComplexDictionaryKeys)
         {
             string result = string.Empty;
 
             if (objectInstance != null)
             {
+                JsonSerializerSettings settings = Settings(writeComplexDictionaryKeys);
+
                 if (includeTypeInformation)
                 {
                     // Declaring the root as "object" makes TypeNameHandling.Auto write the actual
                     // type as $type - without it the root's type is implied and never recorded.
-                    result = JsonConvert.SerializeObject(objectInstance, typeof(object), SerializerSettings);
+                    result = JsonConvert.SerializeObject(objectInstance, typeof(object), settings);
                 }
                 else
                 {
-                    result = JsonConvert.SerializeObject(objectInstance, SerializerSettings);
+                    result = JsonConvert.SerializeObject(objectInstance, settings);
                 }
             }
 
@@ -70,7 +80,8 @@ namespace MDD4All.DME.Proxies
 
             if (!string.IsNullOrEmpty(json) && targetType != null)
             {
-                result = JsonConvert.DeserializeObject(json, targetType, SerializerSettings);
+                // The flag only governs writing, so which value is passed here makes no difference.
+                result = JsonConvert.DeserializeObject(json, targetType, Settings(writeComplexDictionaryKeys: true));
             }
 
             return result;

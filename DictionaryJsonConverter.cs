@@ -1,3 +1,4 @@
+using MDD4All.Reflection;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using System;
@@ -10,11 +11,21 @@ namespace MDD4All.DME.Proxies
     // itself - it has to be the copy loaded in the data model's own AssemblyLoadContext.
     public class DictionaryJsonConverter : JsonConverter
     {
+        private readonly bool _writeComplexKeys;
+
+        // Only writing is a choice. Reading has to understand every form that was ever written,
+        // so the flag is not consulted there.
+        public DictionaryJsonConverter(bool writeComplexKeys = true)
+        {
+            _writeComplexKeys = writeComplexKeys;
+        }
+
         // Newtonsoft calls this for every type it encounters and routes the matching ones here.
         public override bool CanConvert(Type objectType)
         {
             return typeof(IDictionary).IsAssignableFrom(objectType);
         }
+
 
         public override void WriteJson(JsonWriter writer, object value, JsonSerializer serializer)
         {
@@ -37,11 +48,7 @@ namespace MDD4All.DME.Proxies
 
             Type keyType = genericArguments[0];
 
-            bool isSimpleKey = keyType == typeof(string) ||
-                               keyType.IsPrimitive ||
-                               keyType == typeof(Guid);
-
-            if (isSimpleKey)
+            if (TypeAnalyzer.IsSimpleDataType(keyType))
             {
                 // { "Key1": "Value1" } - the key doubles as the JSON property name.
                 writer.WriteStartObject();
@@ -61,7 +68,7 @@ namespace MDD4All.DME.Proxies
 
                 writer.WriteEndObject();
             }
-            else
+            else if (_writeComplexKeys)
             {
                 // [ { "Key": {...}, "Value": {...} } ] - a complex key can't be a property name.
                 writer.WriteStartArray();
@@ -80,6 +87,12 @@ namespace MDD4All.DME.Proxies
                 }
 
                 writer.WriteEndArray();
+            }
+            else
+            {
+                // Dropped, and that has to happen here. Leaving it to Newtonsoft would name the
+                // properties after ToString() of the key, which nothing can turn back into an object.
+                writer.WriteNull();
             }
         }
 
