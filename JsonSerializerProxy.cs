@@ -1,52 +1,81 @@
-﻿using Newtonsoft.Json;
+using Newtonsoft.Json;
 using System;
 using System.Collections.Generic;
 
 namespace MDD4All.DME.Proxies
 {
+    // Runs Newtonsoft inside the data model's own AssemblyLoadContext, which is the only place a
+    // "$type" in a file resolves to the type the caller means. DynamicInvoker reaches this class by
+    // name from the outside - nothing calls it directly, so a rename here breaks no build.
     public class JsonSerializerProxy
     {
-
-        private JsonSerializerSettings SerializerSettings = new JsonSerializerSettings
+        // Assembled on every call instead of being handed out from a field. A single shared instance
+        // whose converter list is swapped per call would have one call reconfigure the next. That
+        // does no harm today only because a fresh proxy is built per invocation, and relying on that
+        // is asking for trouble the moment this class is used any other way.
+        private JsonSerializerSettings CommonSettings()
         {
-            // Includes the full C# type name in the JSON (as $type). 
-            // This is vital for deserializing inherited classes correctly.
-            TypeNameHandling = TypeNameHandling.Auto,
-            // Forces the reader to look for metadata (like $type or $id) at the beginning.
-            //MetadataPropertyHandling = MetadataPropertyHandling.ReadAhead,
-            //// Ensures that the same object isn't saved twice; instead, it uses references ($id/$ref).
-            //PreserveReferencesHandling = PreserveReferencesHandling.Objects,
-            //// Prevents the serializer from crashing if objects point to each other in a circle.
-            //ReferenceLoopHandling = ReferenceLoopHandling.Ignore,
-            // Explicitly writes 'null' into the JSON file instead of skipping the property.
-            // Also needed on the way back in: without an explicit "Property": null in the
-            // file, deserialization leaves whatever the target type's constructor already
-            // set, so a deleted/nulled property would silently reappear after reload.
-            NullValueHandling = NullValueHandling.Include,
-            // Ensures a "fresh start" by replacing existing collections and objects instead of 
-            // appending new data to them. This prevents data pollution and duplicate entries.
-            // Example: If a list currently has 3 items and you load a file containing 2 items, 
-            // 'Replace' ensures the list has exactly 2 items. Without this, the list would 
-            // incorrectly grow to 5 items due to default 'Append' behavior.
-            ObjectCreationHandling = ObjectCreationHandling.Replace,
-            //// Allows the use of private or internal constructors when creating objects from JSON.
-            //ConstructorHandling = ConstructorHandling.AllowNonPublicDefaultConstructor,
-            //// Uses a simplified assembly name in the $type metadata for better compatibility.
-            //TypeNameAssemblyFormatHandling = TypeNameAssemblyFormatHandling.Simple,
-            // Formats the resulting JSON string with indentation and line breaks for human readability.
-            Formatting = Formatting.Indented,
-        };
+            JsonSerializerSettings result = new JsonSerializerSettings
+            {
+                // Wherever the declared type does not say enough, the real one is written into the
+                // file as an extra property named $type:
+                //
+                //     "Pet": { "$type": "PetShop.Dog, PetShop", "Name": "Rex" }
+                //
+                // A property declared as Animal holding a Dog would otherwise come back as an
+                // Animal, so a data model built on inheritance loses everything below the base
+                // class. "Auto" means this is written only where it is needed, not everywhere.
+                //
+                // The root object is the exception and needs help - see Serialize.
+                TypeNameHandling = TypeNameHandling.Auto,
 
-        // JSON only allows strings as property names, so a dictionary keyed by a class needs the
-        // converter. It stays registered either way - taking it out would let Newtonsoft write such
-        // a dictionary under ToString() of the key, which cannot be read back.
-        private JsonSerializerSettings Settings(bool writeComplexDictionaryKeys)
+                // A property cleared to null has to appear in the file as null. Otherwise reading
+                // leaves whatever the constructor put there and the cleared value reappears.
+                NullValueHandling = NullValueHandling.Include,
+
+                // Collections are replaced, not appended to. A list the constructor filled with
+                // three items would otherwise hold five after loading a file that has two.
+                ObjectCreationHandling = ObjectCreationHandling.Replace,
+
+                // Data files are read and diffed by hand, so they are written across several lines
+                // rather than as one.
+                Formatting = Formatting.Indented
+            };
+
+            return result;
+        }
+
+        // Converters are Json.NET's list of exceptions. Walking the graph it asks each of them
+        // CanConvert(type) for every value it meets, and the first one to say yes writes that value
+        // in its place. The settings above are unaffected by that: a converter replaces the handling
+        // of a single value, not of the run, so what it passes back through serializer.Serialize
+        // still gets its $type and its indentation like everything else.
+        //
+        // The one registered here exists because JSON allows only strings as property names, so a
+        // dictionary keyed by an object has nowhere to put its keys. It goes in whatever the flag
+        // says - without it Json.NET would name the properties after ToString() of the key, and
+        // nothing can read that back.
+        //
+        // Constructing it here is also what makes the flag possible at all. The other way to attach
+        // a converter is an attribute on the model, which is out of reach for a foreign DLL and
+        // could not carry a setting either.
+        private JsonSerializerSettings SettingsForWriting(bool writeComplexDictionaryKeys)
         {
-            JsonSerializerSettings settings = SerializerSettings;
+            JsonSerializerSettings result = CommonSettings();
 
-            settings.Converters = new List<JsonConverter> { new DictionaryJsonConverter(writeComplexDictionaryKeys) };
+            result.Converters = new List<JsonConverter> { new DictionaryJsonConverter(writeComplexDictionaryKeys) };
 
-            return settings;
+            return result;
+        }
+
+        // The converter reads both forms, so unlike writing there is nothing to choose here.
+        private JsonSerializerSettings SettingsForReading()
+        {
+            JsonSerializerSettings result = CommonSettings();
+
+            result.Converters = new List<JsonConverter> { new DictionaryJsonConverter() };
+
+            return result;
         }
 
         public string Serialize(object objectInstance, bool includeTypeInformation, bool writeComplexDictionaryKeys)
@@ -55,12 +84,17 @@ namespace MDD4All.DME.Proxies
 
             if (objectInstance != null)
             {
-                JsonSerializerSettings settings = Settings(writeComplexDictionaryKeys);
+                JsonSerializerSettings settings = SettingsForWriting(writeComplexDictionaryKeys);
 
                 if (includeTypeInformation)
                 {
-                    // Declaring the root as "object" makes TypeNameHandling.Auto write the actual
-                    // type as $type - without it the root's type is implied and never recorded.
+                    // The exception mentioned at TypeNameHandling above. Inside the graph every
+                    // value has a declared type to be measured against, but the root has none -
+                    // Json.NET knows what it was handed and sees no reason to record it. Declaring
+                    // the root as "object" creates that gap on purpose, and Auto fills it in.
+                    //
+                    // This one line is what lets a file name its own data model, which is what
+                    // opening a file without picking a model first relies on.
                     result = JsonConvert.SerializeObject(objectInstance, typeof(object), settings);
                 }
                 else
@@ -72,16 +106,13 @@ namespace MDD4All.DME.Proxies
             return result;
         }
 
-        // Runs in the data model's own AssemblyLoadContext, so a $type in the file resolves to the
-        // same type identity the caller expects - resolving it outside would yield a different one.
         public object Deserialize(string json, Type targetType)
         {
             object result = null;
 
             if (!string.IsNullOrEmpty(json) && targetType != null)
             {
-                // The flag only governs writing, so which value is passed here makes no difference.
-                result = JsonConvert.DeserializeObject(json, targetType, Settings(writeComplexDictionaryKeys: true));
+                result = JsonConvert.DeserializeObject(json, targetType, SettingsForReading());
             }
 
             return result;
