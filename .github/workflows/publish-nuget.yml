@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: 'Version to publish, e.g. 1.0.0.3 - use the one checked on GitHub Packages'
+        description: 'Version to publish, e.g. 2.0.0.3 - use the one checked on GitHub Packages'
         required: true
 
 permissions:
