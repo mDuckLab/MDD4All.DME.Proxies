@@ -4,12 +4,42 @@
     <TargetFramework>netstandard2.0</TargetFramework>
   </PropertyGroup>
 
+  <!-- What the listing on a package feed shows. The version is only a fallback: the
+       build hands in the real one, read from src/version.txt plus the run number. -->
+  <PropertyGroup>
+    <Version>1.0.0.0</Version>
+    <Authors>mDuckLab</Authors>
+    <Company>MDD4All.de</Company>
+    <Copyright>© 2026 mDuckLab</Copyright>
+    <Description>Reads and writes an object graph as JSON or XML behind one shape each, so the calling code does not have to know which library sits underneath. Brings a converter for dictionaries whose key is an object - something JSON has no direct form for.</Description>
+    <PackageTags>Serialization Json Xml Dictionary ObjectGraph</PackageTags>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageReadmeFile>Nuget.md</PackageReadmeFile>
+  </PropertyGroup>
+
+  <!-- Where the package came from, and what a debugger needs to step into this code from
+       a project that only has the package. The repository address is not written out: it is
+       read from the git remote while packing, so moving the repository changes nothing here. -->
+  <PropertyGroup>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+  </PropertyGroup>
+
+  <!-- A package project references packages, never projects. The -dev project beside this
+       one is the other way round; that is what the pair is for. -->
   <ItemGroup>
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
+    <PackageReference Include="MDD4All.Reflection.TypeAnalyzer" Version="2.0.0.7" />
+    <PackageReference Include="Microsoft.SourceLink.GitHub" Version="8.0.0" PrivateAssets="All" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\..\MDD4All.Reflection.TypeAnalyzer\src\MDD4All.Reflection.TypeAnalyzer\MDD4All.Reflection.TypeAnalyzer-dev.csproj" />
+    <None Include="Nuget.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
   </ItemGroup>
 
 </Project>

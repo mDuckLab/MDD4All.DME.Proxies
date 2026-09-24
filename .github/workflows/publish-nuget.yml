@@ -1,0 +1,62 @@
+﻿name: Publish to nuget.org
+
+# Only ever started by hand. What lands on nuget.org cannot be taken back - only
+# hidden - so the decision belongs to a person, not to a push.
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to publish, e.g. 1.0.0.3 - use the one checked on GitHub Packages'
+        required: true
+
+permissions:
+  contents: read
+  # Lets the run prove to nuget.org which repository and which file it comes from.
+  # No key is stored anywhere; one is handed out for the length of the run.
+  id-token: write
+
+jobs:
+  publish:
+
+    runs-on: ubuntu-latest
+    env:
+      PROJECT_NAME: MDD4All.DME.Proxies
+
+    steps:
+    - name: Checkout source code
+      uses: actions/checkout@v3
+
+    - name: Setup .NET
+      uses: actions/setup-dotnet@v3
+      with:
+        dotnet-version: 9.0.x
+
+    - name: Echo version number
+      run: echo "${{inputs.version}}"
+
+    - name: Restore dependencies
+      run: dotnet restore ./src/${PROJECT_NAME}/${PROJECT_NAME}.csproj
+
+    - name: Build
+      run: dotnet build --no-restore -c Release /p:Version=${{inputs.version}} ./src/${PROJECT_NAME}/${PROJECT_NAME}.csproj
+
+    - name: Create nuget package(s)
+      run: dotnet pack --configuration Release /p:Version=${{inputs.version}} --no-build --output ./Output ./src/${PROJECT_NAME}/${PROJECT_NAME}.csproj
+
+    - name: Keep a copy of what was published
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{env.PROJECT_NAME}}.${{inputs.version}}
+        path: ./Output/*
+
+    - name: Ask nuget.org for a short-lived key
+      uses: NuGet/login@v1.2.0
+      id: login
+      with:
+        user: mDuckLab
+
+    - name: Publish
+      run: dotnet nuget push ./Output/*.nupkg
+           --api-key ${{steps.login.outputs.NUGET_API_KEY}}
+           --source https://api.nuget.org/v3/index.json
+           --skip-duplicate
