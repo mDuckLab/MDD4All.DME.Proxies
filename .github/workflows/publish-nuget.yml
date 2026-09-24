@@ -23,6 +23,15 @@ jobs:
       PROJECT_NAME: MDD4All.DME.Proxies
 
     steps:
+    # A mistyped version costs a whole run otherwise, and the compiler's complaint about
+    # it reads nothing like the mistake that was made.
+    - name: Check the version looks like a version
+      run: |
+        case "${{inputs.version}}" in
+          [0-9]*.[0-9]*.[0-9]*) echo "ok: ${{inputs.version}}" ;;
+          *) echo "::error::'${{inputs.version}}' is not a version number. Expected something like 2.0.0.1."; exit 1 ;;
+        esac
+
     - name: Checkout source code
       uses: actions/checkout@v3
 
